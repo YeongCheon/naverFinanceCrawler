@@ -1,0 +1,34 @@
+{
+  "settings" : {
+    "index" : {
+    "number_of_shards" : 3,
+    "number_of_replicas" : 2
+  },
+  "mappings": {
+    "daily": {
+      "properties": {
+        "tradeCount": {
+          "type": "long"
+        },
+        "lowPrice": {
+          "type": "long"
+        },
+        "highPrice": {
+          "type": "long"
+        },
+        "price": {
+          "type": "long"
+        },
+        "compareYesterday": {
+          "type": "long"
+        },
+        "endPrice": {
+          "type": "long"
+        },
+        "date": {
+          "type": "date"
+        }
+      }
+    }
+  }
+}

@@ -4,9 +4,12 @@ import (
 	"github.com/PuerkitoBio/goquery"
 
 	"bufio"
+	"bytes"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -14,12 +17,29 @@ import (
 )
 
 const APIURL string = "http://finance.naver.com/item/sise_day.nhn?code=%s&page=%d"
+const ES_URL = "http://127.0.0.1:9200"
+const ES_INDEX_NAME string = "stock"
+const ES_TYPE_NAME string = "daily"
+
+type DailyStock struct {
+	Date             string `json:"date"`
+	EndPrice         int    `json:"endPrice"`
+	CompareYesterday int    `json:"compareYesterday"`
+	Price            int    `json:"price"`
+	HighPrice        int    `json:"highPrice"`
+	LowPrice         int    `json:"lowPrice"`
+	TradeCount       int    `json:"tradeCount"`
+}
 
 func main() {
 	stockList, err := getStockListFromCsv()
 	if err != nil {
 		log.Fatal(err)
 		return
+	}
+
+	if !isExsitIndex(ES_INDEX_NAME) {
+		createIndex(ES_INDEX_NAME)
 	}
 
 	for stockCode, _ := range stockList {
@@ -45,7 +65,7 @@ func parseData(stockCode string, pageNum int) error {
 	fmt.Println(url)
 
 	doc.Find(`table.type2 tbody tr[onmouseover="mouseOver(this)"]`).Each(func(i int, selection *goquery.Selection) {
-		date := selection.Find("td:nth-child(1) span").Text()                                 //날짜
+		date := selection.Find("td:nth-child(1) span").Text()                                 //날짜(yyyy.MM.dd)
 		endPrice := getNumberFromPrice(selection.Find("td:nth-child(2) span").Text())         //종가
 		compareYesterday := getNumberFromPrice(selection.Find("td:nth-child(3) span").Text()) //전일 대비
 		price := getNumberFromPrice(selection.Find("td:nth-child(4) span").Text())            //시가
@@ -53,7 +73,24 @@ func parseData(stockCode string, pageNum int) error {
 		lowPrice := getNumberFromPrice(selection.Find("td:nth-child(6) span").Text())         // 저가
 		tradeCount := getNumberFromPrice(selection.Find("td:nth-child(7) span").Text())       //거래량
 
-		fmt.Println(date, endPrice, compareYesterday, price, highPrice, lowPrice, tradeCount)
+		date = strings.Replace(date, ".", "-", -1)
+		if selection.Find("td:nth-child(3) img").AttrOr("alt", "상승") == "상승" {
+			compareYesterday = compareYesterday * 1
+		} else { // 하락
+			compareYesterday = compareYesterday * -1
+		}
+
+		stock := DailyStock{
+			Date:             date,
+			EndPrice:         endPrice,
+			CompareYesterday: compareYesterday,
+			Price:            price,
+			HighPrice:        highPrice,
+			LowPrice:         lowPrice,
+			TradeCount:       tradeCount,
+		}
+
+		insertDailyStock(stock)
 	})
 
 	return nil
@@ -68,7 +105,7 @@ func getLastPage(stockCode string) (int, error) {
 
 	endHref, isExist := doc.Find("table.Nnavi tbody tr td.pgRR a").Attr("href")
 	if !isExist {
-		fmt.Println("WTF!!!")
+		return 0, nil //FIXME
 	}
 	tmp := strings.Split(endHref, "=")
 	lastPage, _ := strconv.Atoi(tmp[len(tmp)-1])
@@ -113,7 +150,6 @@ func getFormattedStock(stockCode string) string {
 }
 
 func getNumberFromPrice(price string) int { //remove comma in price
-
 	result, err := strconv.Atoi(strings.Replace(strings.TrimSpace(price), ",", "", -1))
 	if err != nil {
 		log.Println(price)
@@ -121,4 +157,57 @@ func getNumberFromPrice(price string) int { //remove comma in price
 		return 0
 	}
 	return result
+}
+
+func isExsitIndex(esIndexName string) bool {
+	res, err := http.Head(ES_URL + "/" + esIndexName)
+	if err != nil {
+		log.Println(err)
+		return false
+	}
+	if res.StatusCode == 404 {
+		return false
+	} else {
+		return true
+	}
+}
+
+func createIndex(esIndexName string) {
+	client := &http.Client{}
+	f, err := os.Open("./setting.json")
+	if err != nil {
+		log.Println(err)
+	}
+
+	req, err := http.NewRequest(http.MethodPut, ES_URL+"/"+esIndexName, f)
+	if err != nil {
+		log.Println(err)
+	}
+	req.Header.Add("content-type", "application/json")
+
+	_, err = client.Do(req)
+	if err != nil {
+		log.Println(err)
+	}
+
+	log.Println("create index")
+}
+
+func insertDailyStock(dailyStock DailyStock) {
+	client := &http.Client{}
+
+	data := new(bytes.Buffer)
+	json.NewEncoder(data).Encode(dailyStock)
+
+	req, err := http.NewRequest(http.MethodPost, ES_URL+"/"+ES_INDEX_NAME+"/"+ES_TYPE_NAME, data)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	req.Header.Add("content-type", "application/json")
+
+	_, err = client.Do(req)
+	if err != nil {
+		log.Println(err)
+	}
 }
