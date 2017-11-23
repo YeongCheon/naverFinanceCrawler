@@ -54,6 +54,58 @@ func main() {
 			time.Sleep(time.Duration(rand.Intn(3)) * time.Second)
 		}
 	}
+
+	t := time.Now()
+	for {
+		if t.Format("2006-01-02") == time.Now().Format("2006-01-02") && time.Now().Hour() >= 20 { //매일 20시 이후에 한번씩 실행
+			for stockCode, _ := range stockList {
+				parseTodayData(stockCode, t)
+			}
+			t.AddDate(0, 0, 1)
+		}
+	}
+}
+
+func parseTodayData(stockCode string, t time.Time) {
+
+	url := fmt.Sprintf(APIURL, stockCode, 1)
+	doc, err := goquery.NewDocument(url)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	doc.Find(`table.type2 tbody tr[onmouseover="mouseOver(this)"]`).Each(func(i int, selection *goquery.Selection) {
+		date := selection.Find("td:nth-child(1) span").Text()                                 //날짜(yyyy.MM.dd)
+		endPrice := getNumberFromPrice(selection.Find("td:nth-child(2) span").Text())         //종가
+		compareYesterday := getNumberFromPrice(selection.Find("td:nth-child(3) span").Text()) //전일 대비
+		price := getNumberFromPrice(selection.Find("td:nth-child(4) span").Text())            //시가
+		highPrice := getNumberFromPrice(selection.Find("td:nth-child(5) span").Text())        // 고가
+		lowPrice := getNumberFromPrice(selection.Find("td:nth-child(6) span").Text())         // 저가
+		tradeCount := getNumberFromPrice(selection.Find("td:nth-child(7) span").Text())       //거래량
+
+		date = strings.Replace(date, ".", "-", -1)
+		if selection.Find("td:nth-child(3) img").AttrOr("alt", "상승") == "상승" {
+			compareYesterday = compareYesterday * 1
+		} else { // 하락
+			compareYesterday = compareYesterday * -1
+		}
+
+		stock := DailyStock{
+			Date:             date,
+			EndPrice:         endPrice,
+			CompareYesterday: compareYesterday,
+			Price:            price,
+			HighPrice:        highPrice,
+			LowPrice:         lowPrice,
+			TradeCount:       tradeCount,
+		}
+
+		if t.Format("2006-01-02") == date {
+			insertDailyStock(stock)
+		}
+
+	})
 }
 
 func parseData(stockCode string, pageNum int) error {
