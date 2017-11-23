@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"strconv"
@@ -50,9 +51,8 @@ func main() {
 		}
 		for i := 1; i <= lastPageNumber; i++ {
 			parseData(stockCode, i)
-			time.Sleep(2500 * time.Millisecond)
+			time.Sleep(time.Duration(rand.Intn(3)) * time.Second)
 		}
-
 	}
 }
 
