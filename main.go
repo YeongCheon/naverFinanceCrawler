@@ -8,6 +8,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
@@ -23,6 +24,8 @@ const ES_INDEX_NAME string = "stock"
 const ES_TYPE_NAME string = "daily"
 
 type DailyStock struct {
+	Id               string //format: 000000-yyyyMMdd
+	Code             string `json:"code"`
 	Date             string `json:"date"`
 	EndPrice         int    `json:"endPrice"`
 	CompareYesterday int    `json:"compareYesterday"`
@@ -92,7 +95,9 @@ func parseTodayData(stockCode string, t time.Time) {
 		}
 
 		stock := DailyStock{
+			Id:               stockCode + "-" + strings.Replace(date, "-", "", -1),
 			Date:             date,
+			Code:             stockCode,
 			EndPrice:         endPrice,
 			CompareYesterday: compareYesterday,
 			Price:            price,
@@ -133,6 +138,8 @@ func parseData(stockCode string, pageNum int) error {
 		}
 
 		stock := DailyStock{
+			Id:               stockCode + "-" + strings.Replace(date, "-", "", -1),
+			Code:             stockCode,
 			Date:             date,
 			EndPrice:         endPrice,
 			CompareYesterday: compareYesterday,
@@ -217,6 +224,7 @@ func isExsitIndex(esIndexName string) bool {
 		log.Println(err)
 		return false
 	}
+
 	if res.StatusCode == 404 {
 		return false
 	} else {
@@ -251,15 +259,18 @@ func insertDailyStock(dailyStock DailyStock) {
 	data := new(bytes.Buffer)
 	json.NewEncoder(data).Encode(dailyStock)
 
-	req, err := http.NewRequest(http.MethodPost, ES_URL+"/"+ES_INDEX_NAME+"/"+ES_TYPE_NAME, data)
+	req, err := http.NewRequest(http.MethodPost, ES_URL+"/"+ES_INDEX_NAME+"/"+ES_TYPE_NAME+"/"+dailyStock.Id, data)
 	if err != nil {
 		log.Println(err)
 		return
 	}
 	req.Header.Add("content-type", "application/json")
 
-	_, err = client.Do(req)
+	res, err := client.Do(req)
 	if err != nil {
 		log.Println(err)
 	}
+	body, _ := ioutil.ReadAll(res.Body)
+
+	log.Println(string(body))
 }
